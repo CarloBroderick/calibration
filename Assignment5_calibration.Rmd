@@ -25,45 +25,53 @@ Final piece will be to produce a graph of maximum likelihood estimate given you 
 
 To hand in - an Rmarkdown and R function. Please knit and turn in either an html or pdf of the markdown.
 
-Part 1 from above: R function that codes a metric for performance evaluation
+## Part 1 from above: R function that codes a metric for performance evaluation
 
 -   must be a combination of at least two performance measures
 
 -   include some comments that explain 'why' this metric
 
-A**s a group we wanted to see if the model was getting things right on average but we thought that an annual metric would loose some of the seasonal variability, so we created two indicators that measure monthly average model performance and combined them.**
+**As a group we wanted to see if the model was getting things right on average but we thought that an annual metric would loose some of the seasonal variability, so we created three indicators that measure monthly average model performance and combined them. We made a monthly NSE metric, a monthly error metric, and a monthly KGE metric. The Kling-Gupta Efficiency KGE metric is similar to the NSE, but it is based on Euclidean distance between points.**
 
 ```{r}
-# create custom performance metric
+# Create a custom performance metric
 combined_performance_metric = function(m, o, month) {
 
-  # create a data frame and calculate monthly mean for m and o
+  # Create a dataframe to get the averages for the modeled values and the observation values
   df = data.frame(m, o, month) |>
     group_by(month) |>
-    summarise(ave_m = mean(m), ave_o = mean(o))
+    summarise(ave_m = mean(m), ave_o = mean(o), 
+              sd_m = sd(m), sd_o = sd(o))
   
-  # create a monthly average NSE score
+  # Calculate the monthly average NSE score
   err = df$ave_m - df$ave_o
   meanobs = mean(df$ave_o)
   mse = sum(err*err)
   ovar = sum((df$ave_o-meanobs)*(df$ave_o-meanobs))
   monthly_nse = 1.0-mse/ovar
-  
-  # create a monthly error score and normalize
+
+  # Calculate the monthly error and normalize
   month_error = sum(df$ave_m - df$ave_o)
-  month<- abs(month_error)
-  month_error <- exp(-month)
+  month = abs(month_error)
+  month_error = exp(-month)
+
+  # Calculate the average monthly KGE (Kling-Gupta Efficiency) metric
+  beta = sum(df$ave_m/df$ave_o)
+  alpha = sum(df$sd_m/df$sd_o)
+  r = cor(m, o, method = "pearson")
+  kge = 1.0 - sqrt(((r - 1)^2) + ((alpha - 1)^2) + ((beta - 1)^2))
+
+  # Multiply the performance metrics together to get a combined metric
+  combined = monthly_nse * month_error * kge
   
-  # simple multiplication of perfomance metrics
-  combined = monthly_nse * month_error
-
-  # return combined performance metric
+  # Return the combined metric
   return(combined)
+  print(monthly_nse)
+  print(month_error)
 }
-
 ```
 
-Part 2:
+## Part 2:
 
 Apply your performance function to a subset of the Sagehen data set (with multiple simulations) that you want to use for calibration
 
@@ -76,48 +84,51 @@ Record your 'best' and 'worst' parameter set in this spreadsheet and in your Rmd
 **Best Simulation: S48**
 
 ```{r}
-# read in data
-sager = read.table("sager.txt", header=T)
+# Read in the data
+sager <- read.table("sager.txt", header=T)
 
-# add date
-sager = sager %>% mutate(date = paste(day,month,year, sep="/"))
-sager$date = as.Date(sager$date,"%d/%m/%Y")
+# Add date
+sager <- sager %>% mutate(date = paste(day,month,year, sep="/"))
+sager$date <- as.Date(sager$date,"%d/%m/%Y")
 
-# read in model data
-msage = read.table("sagerm.txt", header=T)
+# Read in model data
+msage <- read.table("sagerm.txt", header=T)
 
-# rename columns
-nsim = ncol(msage)
-snames = sprintf("S%d",seq(from=1, to=nsim))
-colnames(msage)=snames
+# Rename columns
+nsim <- ncol(msage)
+snames <- sprintf("S%d",seq(from=1, to=nsim))
+colnames(msage) <- snames
 
-# lets say we know the start date from our earlier output
-msage$date = sager$date
-msage$month = sager$month
-msage$year = sager$year
-msage$day = sager$day
-msage$wy = sager$wy
+# Know the start date from our earlier output
+msage$date <- sager$date
+msage$month <- sager$month
+msage$year <- sager$year
+msage$day <- sager$day
+msage$wy <- sager$wy
 
-# add sager observation data
-msage = left_join(msage, sager[,c("obs","date")], by=c("date"))
+# Add sager observation data
+msage <- left_join(msage, sager[,c("obs","date")], by=c("date"))
 ```
 
 ```{r}
-# map the the performance of the different models
-res = msage %>% select(!c("date","month",
-                          "year","day","wy",
-                          "obs")) %>%
-  map_dbl(combined_performance_metric, month = msage$month, msage$obs)
+combined_performance_metric(m = sager$model,o = sager$obs, month = sager$month)
+```
+
+
+```{r}
+# Map the the performance of the different models
+res <- msage %>% select(!c("date", "month", "year", "day", "wy", "obs")) %>% 
+  map_dbl(combined_performance_metric, month = msage$month, o = msage$obs)
 ```
 
 ```{r}
-# make the output of the map funciton a df
+# Make the output of the map function a dataframe
 res <- as.data.frame(res)
 
-# put the names of the models on the data frame
-res$sim = snames
+# Put the names of the models on the data frame
+res$sim <- snames
 
-# get the best and word perfomring models 
+# Get the best and word performing models 
 highest_row <- which.max(res$res)
 lowest_row <- which.min(res$res)
 highest_sim <- res$sim[highest_row]
@@ -127,7 +138,7 @@ lowest_sim <- res$sim[lowest_row]
 ```{r}
 # put worst and best model outputs into a df
 best_worst_output <- msage |>
-  select(S95, S48)
+  select(S95, S48) # S95 and S74 previously
 
 # add the time and observations for the outputs
 best_worst_data <-  msage %>% 
@@ -137,16 +148,16 @@ best_worst_data <-  msage %>%
   cbind(best_worst_output)
 
 # create the graphing df by pivoting longer and filtering by date
-ggplot_df  =  best_worst_data %>% 
+ggplot_df <- best_worst_data %>% 
   pivot_longer(cols=!c(date, month, year, day, wy), 
                names_to="sim", 
-               values_to="flow") |>
+               values_to="flow") %>%
   filter(year(date) >= 1975, year(date) <= 1977)
 
 ```
 
 ```{r}
-# make log flow line graph
+# Make log flow line graph
 ggplot(ggplot_df, aes(x = date, y = log(flow), color = sim)) +
   geom_line(size = 0.5) + # set line size to be very skinny
   scale_color_discrete(labels = c("Observation", "Simulation 48", "Simulation 95")) +
@@ -168,8 +179,7 @@ ggplot(ggplot_df, aes(x = date, y = log(flow), color = sim)) +
 ```
 
 ```{r}
-
-# make flow line graph
+# Make flow line graph
 ggplot(ggplot_df, aes(x = date, y = flow, color = sim)) +
   geom_line(size = 0.5) +
   scale_color_discrete(labels = c("Observation", "Simulation 48", "Simulation 95")) +

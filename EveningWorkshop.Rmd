@@ -32,8 +32,7 @@ from a hydrologic model applied to a Sierra watershed
 # Graph
 
 ```{r simple}
-
-sager = read.table("Data/sager.txt", header=T)
+sager = read.table("sager.txt", header=T)
 head(sager)
 
 # add date
@@ -54,8 +53,6 @@ ggplot(sagerl, aes(date, flow, col=source, linetype=source))+geom_line()+scale_y
 
 # look at it another way with 1:1 line 
 ggplot(sager, aes(obs, model))+geom_point()+geom_abline(intercept=0, slope=1, col="red")
-
-
 ```
 
 # Measure Performance using different metrics
@@ -63,8 +60,6 @@ ggplot(sager, aes(obs, model))+geom_point()+geom_abline(intercept=0, slope=1, co
 - for the inputs to these functions, m=model and o=observation
 
 ```{r}
-
-
 source("R/nse.R")
 
 source("R/relerr.R")
@@ -80,8 +75,6 @@ nse(m=sager$model, o=sager$obs)
 relerr(m=sager$model, o=sager$obs)*100
 
 cper(m=sager$model, o=sager$obs, weight.nse=0.8)
-
-
 ```
 
 # Scale and subsetting
@@ -123,38 +116,48 @@ sager
 * Think of a new metric that might be interesting from a particular environmental context
 
 ```{r}
-sager_wy$model, sager_wy$obs
+sager_wy$model 
+sager_wy$obs
 ```
 
 
 ```{r}
-# create custom performance metric
+# Create custom performance metric
 combined_performance_metric = function(m, o, month) {
 
+  # Create a dataframe to get the averages for the modeled values and the observation values
   df = data.frame(m, o, month) |>
     group_by(month) |>
-    summarise(ave_m = mean(m), ave_o = mean(o))
+    summarise(ave_m = mean(m), ave_o = mean(o), 
+              sd_m = sd(m), sd_o = sd(o))
   
+  # Calculate the monthly nse metric
   err = df$ave_m - df$ave_o
   meanobs = mean(df$ave_o)
   mse = sum(err*err)
   ovar = sum((df$ave_o-meanobs)*(df$ave_o-meanobs))
   monthly_nse = 1.0-mse/ovar
-  
+
+  # Calculate the monthly error
   month_error = sum(df$ave_m - df$ave_o)
-  month<- abs(month_error)
-  month_error <- exp(-month)
-  
-  combined = monthly_nse * month_error
+  month = abs(month_error)
+  month_error = exp(-month)
+
+  # Calculate the KGE (Kling-Gupta Efficiency) metric for each month
+  beta = df$ave_m/df$ave_o
+  alpha = df$sd_m/df$sd_o
+  r = cor(m, o, method = "pearson")
+  kge = 1.0 - sqrt(((r - 1)^2) + ((alpha - 1)^2) + ((beta - 1)^2))
+
+  combined = monthly_nse * month_error * kge
 
   return(combined)
 }
-
-
 ```
 
 ```{r}
-monthly_nse(m = sager$model,o = sager$obs, month = sager$month)
+# Test out the combined_performance_metric function on our data
+combined_performance_metric(m = sager$model,o = sager$obs, month = sager$month)
 ```
 
 
@@ -170,7 +173,7 @@ monthly_nse(m = sager$model,o = sager$obs, month = sager$month)
 ```{r multimetric}
 
 # turn your evaluation metric into a function
-source("../R/compute_lowflowmetrics.R")
+source("compute_lowflowmetrics.R")
 compute_lowflowmetrics
 
 compute_lowflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy)
@@ -225,7 +228,7 @@ perf = perf %>% mutate(combined2 = 0.1*annual_min_cor + 0.1*annual_min_err_trans
 perf
 
 # easier to put all this in a function
-source("../R/compute_lowflowmetrics_all.R")
+source("compute_lowflowmetrics_all.R")
 
 compute_lowflowmetrics_all
 
@@ -278,7 +281,7 @@ Some code to help organize things
 
 # multiple results - lets say we've run the model for multiple years, 
 #each column  is streamflow for a different parameter set
-msage = read.table("Data/sagerm.txt", header=T)
+msage = read.table("sagerm.txt", header=T)
 
 # keep track of number of simulations (e.g results for each parameter set) 
 # use as a column names
@@ -320,7 +323,7 @@ head(res)
 
 # another example using our low flow statistics
 # use apply to compute for all the data
-source("R/compute_lowflowmetrics_all.R")
+source("compute_lowflowmetrics_all.R")
 res = short_msage %>% select(-date, -month, -day, -year, -wy, -obs ) %>%
   map_df(compute_lowflowmetrics_all, o=short_msage$obs, month=short_msage$month, day=short_msage$day, year=short_msage$year, wy=short_msage$wy)
 # note here we use map_df to get a dataframe back 
@@ -345,23 +348,19 @@ best = res[which.max(res$combined),]
 # so we can look at the full time series
 
 # lets start with streamflow estimates from best performing parameter set
- ggplot(msage, aes(date, msage[,best$sim])) + geom_line()+geom_line(aes(date, obs), col="red") 
+ggplot(msage, aes(date, msage[,best$sim])) + geom_line()+geom_line(aes(date, obs), col="red") 
 
  
 # for comparison lets consider how worst and best parameters perform for subsequent simulations
 # focusing specifically on August streamflow
- worst = res[which.min(res$combined),]
+worst = res[which.min(res$combined),]
  
- compruns = msage %>% select(best$sim, worst$sim, date, obs, month, day, year, wy)
- compruns = subset(compruns, wy > 1970)
- compruns_mwy = compruns %>% select(-c(day,date, year)) %>% group_by(month, wy) %>% summarize(across(everything(), mean))
+compruns = msage %>% select(best$sim, worst$sim, date, obs, month, day, year, wy)
+compruns = subset(compruns, wy > 1970)
+compruns_mwy = compruns %>% select(-c(day,date, year)) %>% group_by(month, wy) %>% summarize(across(everything(), mean))
  
- compruns_mwyl = compruns_mwy %>% pivot_longer(cols=!c(month,wy), names_to="sim", values_to="flow")
- compruns_mwyl %>% subset(month==8) %>% ggplot(aes(sim,flow ))+geom_boxplot()
- 
-
-
-
+compruns_mwyl = compruns_mwy %>% pivot_longer(cols=!c(month,wy), names_to="sim", values_to="flow")
+compruns_mwyl %>% subset(month==8) %>% ggplot(aes(sim,flow ))+geom_boxplot()
 
 ```
 
