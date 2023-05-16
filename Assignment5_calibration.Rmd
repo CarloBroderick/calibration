@@ -60,14 +60,13 @@ combined_performance_metric = function(m, o, month) {
   alpha = sum(df$sd_m/df$sd_o)
   r = cor(m, o, method = "pearson")
   kge = 1.0 - sqrt(((r - 1)^2) + ((alpha - 1)^2) + ((beta - 1)^2))
-
+  kge_norm = exp(-abs(kge))
+  
   # Multiply the performance metrics together to get a combined metric
-  combined = monthly_nse * month_error * kge
+  combined = monthly_nse * month_error * kge_norm
   
   # Return the combined metric
   return(combined)
-  print(monthly_nse)
-  print(month_error)
 }
 ```
 
@@ -81,7 +80,7 @@ Record your 'best' and 'worst' parameter set in this spreadsheet and in your Rmd
 
 **Worst Simulation: S95**
 
-**Best Simulation: S48**
+**Best Simulation: S49**
 
 ```{r}
 # Read in the data
@@ -114,7 +113,6 @@ msage <- left_join(msage, sager[,c("obs","date")], by=c("date"))
 combined_performance_metric(m = sager$model,o = sager$obs, month = sager$month)
 ```
 
-
 ```{r}
 # Map the the performance of the different models
 res <- msage %>% select(!c("date", "month", "year", "day", "wy", "obs")) %>% 
@@ -138,7 +136,7 @@ lowest_sim <- res$sim[lowest_row]
 ```{r}
 # put worst and best model outputs into a df
 best_worst_output <- msage |>
-  select(S95, S48) # S95 and S74 previously
+  select(S95, S49) 
 
 # add the time and observations for the outputs
 best_worst_data <-  msage %>% 
@@ -160,7 +158,7 @@ ggplot_df <- best_worst_data %>%
 # Make log flow line graph
 ggplot(ggplot_df, aes(x = date, y = log(flow), color = sim)) +
   geom_line(size = 0.5) + # set line size to be very skinny
-  scale_color_discrete(labels = c("Observation", "Simulation 48", "Simulation 95")) +
+  scale_color_discrete(labels = c("Observation", "Simulation 49", "Simulation 95")) +
   theme_minimal() +
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold", size = 20),
@@ -182,7 +180,7 @@ ggplot(ggplot_df, aes(x = date, y = log(flow), color = sim)) +
 # Make flow line graph
 ggplot(ggplot_df, aes(x = date, y = flow, color = sim)) +
   geom_line(size = 0.5) +
-  scale_color_discrete(labels = c("Observation", "Simulation 48", "Simulation 95")) +
+  scale_color_discrete(labels = c("Observation", "Simulation 49", "Simulation 95")) +
   theme_minimal() +
   theme(
     plot.title = element_text(hjust = 0.5, face = "bold", size = 20),
@@ -210,7 +208,7 @@ boxplot_df  =  best_worst_data %>%
 # make boxplot
 ggplot(boxplot_df, aes(sim, flow, fill = sim)) +
   geom_boxplot(outlier.shape = NA) +
-  scale_fill_discrete(labels = c("Observation", "Simulation 48", "Simulation 95")) +
+  scale_fill_discrete(labels = c("Observation", "Simulation 49", "Simulation 95")) +
   coord_cartesian(ylim = c(0, 2.5)) +
   theme_minimal() +
   theme(

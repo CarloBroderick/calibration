@@ -120,6 +120,55 @@ sager_wy$model
 sager_wy$obs
 ```
 
+```{r}
+monthly_nse = function(m, o, month) {
+
+  # Create a dataframe to get the averages for the modeled values and the observation values
+  df = data.frame(m, o, month) |>
+    group_by(month) |>
+    summarise(ave_m = mean(m), ave_o = mean(o), 
+              sd_m = sd(m), sd_o = sd(o))
+  
+  # Calculate the monthly nse metric
+  err = df$ave_m - df$ave_o
+  meanobs = mean(df$ave_o)
+  mse = sum(err*err)
+  ovar = sum((df$ave_o-meanobs)*(df$ave_o-meanobs))
+  monthly_nse = 1.0-mse/ovar
+  return(monthly_nse)
+}
+```
+
+```{r}
+month_m <- function(m,o) {
+  mean_month = sager|>
+    group_by(month)|>
+    summarise(mean_model = mean(model), mean_obs = mean(obs))
+  month_error = sum(mean_month$mean_model - mean_month$mean_obs)
+  month<- abs(month_error)
+  month_final <- exp(-month)
+  return(month_final)
+}
+```
+
+```{r}
+kge = function(m, o, month) {
+  # Create a dataframe to get the averages for the modeled values and the observation values
+  df = data.frame(m, o, month) |>
+    group_by(month) |>
+    summarise(ave_m = mean(m), ave_o = mean(o), 
+              sd_m = sd(m), sd_o = sd(o))
+  
+  # Calculate the average monthly KGE (Kling-Gupta Efficiency) metric
+  beta = sum(df$ave_m/df$ave_o)
+  alpha = sum(df$sd_m/df$sd_o)
+  r = cor(m, o, method = "pearson")
+  kge = 1.0 - sqrt(((r - 1)^2) + ((alpha - 1)^2) + ((beta - 1)^2))
+  kge_norm = exp(-abs(kge))
+  
+  return(kge_norm)
+}
+```
 
 ```{r}
 # Create custom performance metric
@@ -148,8 +197,9 @@ combined_performance_metric = function(m, o, month) {
   alpha = df$sd_m/df$sd_o
   r = cor(m, o, method = "pearson")
   kge = 1.0 - sqrt(((r - 1)^2) + ((alpha - 1)^2) + ((beta - 1)^2))
-
-  combined = monthly_nse * month_error * kge
+  kge_norm = exp(-abs(kge))
+  
+  combined = monthly_nse * month_error * kge_norm
 
   return(combined)
 }
@@ -160,6 +210,11 @@ combined_performance_metric = function(m, o, month) {
 combined_performance_metric(m = sager$model,o = sager$obs, month = sager$month)
 ```
 
+```{r}
+kge(m = sager$model, o = sager$obs,  month = sager$month)
+monthly_nse(m = sager$model, o = sager$obs,  month = sager$month)
+month_m(m = sager$model, o = sager$obs)
+```
 
 * Code that metric as a function - and then apply it
 
